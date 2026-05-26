@@ -57,6 +57,7 @@ jobs:
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
         id: filter
         with:
+          base: ${{ github.event.repository.default_branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
           filters: |
             go:
@@ -303,7 +304,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k8s: [v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
+        k8s: [v1.20.15, v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
 
     steps:
       - name: Harden the runner (Audit all outbound calls)
@@ -340,7 +341,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k8s: [v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
+        k8s: [v1.20.15, v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
     uses: ./.github/workflows/zz-tmpl-k8s-e2e.yaml
     with:
       k8s-version: ${{ matrix.k8s }}
@@ -355,7 +356,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        k8s: [v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
+        k8s: [v1.20.15, v1.31.14, v1.32.11, v1.33.7, v1.34.3, v1.35.1]
     uses: ./.github/workflows/zz-tmpl-k8s-e2e.yaml
     with:
       k8s-version: ${{ matrix.k8s }}
