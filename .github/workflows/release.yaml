@@ -1,0 +1,347 @@
+name: Release to ghcr.io
+on: 
+  push:
+    tags:
+      - v*
+      - v*-*
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/bitmoa-nginx-ingress
+
+jobs:
+
+  changes:
+    permissions:
+      contents: read  # for dorny/paths-filter to fetch a list of changed files
+      pull-requests: read  # for dorny/paths-filter to read pull requests
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      charts: ${{ steps.filter.outputs.charts }}
+      baseimage: ${{ steps.filter.outputs.baseimage }}
+
+    steps:
+
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          base: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'rootfs/**/*'
+              - 'TAG'
+              - 'test/e2e/**/*'
+              - 'NGINX_BASE'
+            charts:
+              - 'charts/ingress-nginx/Chart.yaml'
+              - 'charts/ingress-nginx/**/*'
+              - 'NGINX_BASE'
+            baseimage:
+              - 'NGINX_BASE'
+              - 'images/nginx/**'
+            docs:
+              - '**/*.md'
+            lua:
+              - '**/*.lua'
+
+  test-go:
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      (needs.changes.outputs.go == 'true')
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Get go version
+        run: echo "GOLANG_VERSION=$(cat GOLANG_VERSION)" >> $GITHUB_ENV
+
+      - name: Set up Go
+        id: go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version: ${{ env.GOLANG_VERSION }}
+          check-latest: true
+
+      - name: Run test
+        run: make test
+
+  build:
+    name: Build
+    needs: changes
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    
+    runs-on: ${{ matrix.runner }}
+
+    outputs:
+      golangversion: ${{ steps.golangversion.outputs.version }}
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@fa2e9d605c4eeb9fcad4c99c224cee0c6c7f3594 # v2.16.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Prepare platform name
+        id: platform
+        run: |
+          platform="${{ matrix.platform }}"
+          echo "name=${platform//\//-}" >> "$GITHUB_OUTPUT"
+
+      - name: Get go version
+        id: golangversion
+        run: |
+          echo "version=$(cat GOLANG_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        id: go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version: ${{ steps.golangversion.outputs.version }}
+          check-latest: true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@ce360397dd3f832beb865e1373c09c0e9f86d70a # v4.0.0
+
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
+
+      - name: Prepare Host
+        run: |
+          curl -LO https://dl.k8s.io/release/v1.35.3/bin/linux/amd64/kubectl
+          chmod +x ./kubectl
+          sudo mv ./kubectl /usr/local/bin/kubectl
+
+      - name: Prepare envs
+        run: |
+            TAGNGINX=$(cat images/nginx/TAG)
+            echo "TAGNGINX=${TAGNGINX}" >> $GITHUB_ENV
+            COMMIT_SHA=$(git rev-parse --short HEAD)
+            echo "COMMIT_SHA=${COMMIT_SHA}" >> $GITHUB_ENV
+      
+      - name: Build binaries
+        run: |
+          make ARCH=${{ matrix.arch }} COMMIT_SHA=${{ env.COMMIT_SHA }} build
+
+      - name: Build base image
+        uses: docker/build-push-action@v7
+        with:
+          platforms: ${{ matrix.platform }}
+          context: images/nginx/rootfs
+          file: images/nginx/rootfs/Dockerfile
+          push: false
+          load: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-nginx:${{ env.TAGNGINX }}
+          cache-from: type=gha
+          cache-to: type=gha
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push image
+        id: build_controller
+        uses: docker/build-push-action@v7
+        with:
+          platforms: ${{ matrix.platform }}
+          context: rootfs
+          file: rootfs/Dockerfile
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-controller:${{ env.TAGNGINX }}-${{ matrix.arch }}
+          cache-from: type=gha
+          cache-to: type=gha
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-nginx:${{ env.TAGNGINX }}
+            VERSION=${{ github.ref_name }}
+            COMMIT_SHA=${{ env.COMMIT_SHA }}
+            BUILD_ID="UNSET"
+
+      - name: Build and Push chroot image
+        id: build_controller_chroot
+        uses: docker/build-push-action@v7
+        with:
+          platforms: ${{ matrix.platform }}
+          context: rootfs
+          file: rootfs/Dockerfile-chroot
+          push: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-controller-chroot:${{ env.TAGNGINX }}-${{ matrix.arch }}
+          cache-from: type=gha
+          cache-to: type=gha
+          build-args: |
+            BASE_IMAGE=${{ env.IMAGE_PREFIX }}-nginx:${{ env.TAGNGINX }}
+            VERSION=${{ github.ref_name }}
+            COMMIT_SHA=${{ env.COMMIT_SHA }}
+            BUILD_ID="UNSET"
+
+      - name: Export digests
+        run: |
+          mkdir -p /tmp/digests /tmp/digests-chroot
+          digest="${{ steps.build_controller.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+          digest="${{ steps.build_controller_chroot.outputs.digest }}"
+          touch "/tmp/digests-chroot/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-controller-default-${{ steps.platform.outputs.name }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-controller-chroot-${{ steps.platform.outputs.name }}
+          path: /tmp/digests-chroot/*
+          if-no-files-found: error
+          retention-days: 1
+  
+  merge:
+    name: Merge manifests
+    runs-on: ubuntu-24.04
+    needs: build
+
+    permissions:
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Set up Docker
+        uses: docker/setup-docker-action@v4
+
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-controller-default-*
+          merge-multiple: true
+      
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests-chroot
+          pattern: digests-controller-chroot-*
+          merge-multiple: true
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-controller
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+
+      - name: Docker metadata
+        id: meta_chroot
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_PREFIX }}-controller-chroot
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha
+
+      - name: Create manifest list and push tags
+        working-directory: /tmp/digests
+        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-controller:${{ github.ref_name }}"
+
+          TAG_ARGS=""
+          while IFS= read -r tag; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done <<< "${{ steps.meta.outputs.tags }}"
+
+          DIGEST_ARGS=""
+          for digest in *; do
+            DIGEST_ARGS="$DIGEST_ARGS $IMAGE@sha256:$digest"
+          done
+
+          docker buildx imagetools create $TAG_ARGS $DIGEST_ARGS
+
+      - name: Create manifest list and push tags
+        working-directory: /tmp/digests-chroot
+        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-controller-chroot:${{ github.ref_name }}"
+
+          TAG_ARGS=""
+          while IFS= read -r tag; do
+            TAG_ARGS="$TAG_ARGS -t $tag"
+          done <<< "${{ steps.meta_chroot.outputs.tags }}"
+
+          DIGEST_ARGS=""
+          for digest in *; do
+            DIGEST_ARGS="$DIGEST_ARGS $IMAGE@sha256:$digest"
+          done
+
+          docker buildx imagetools create $TAG_ARGS $DIGEST_ARGS
+
+      - name: Inspect final image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE_PREFIX }}-controller:${{ github.ref_name }}
+
+      - name: Inspect final image
+        run: |
+          docker buildx imagetools inspect ${{ env.IMAGE_PREFIX }}-controller-chroot:${{ github.ref_name }}
