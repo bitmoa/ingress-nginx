@@ -1,0 +1,32 @@
+--- a/src/ndk_rewrite.c
++++ b/src/ndk_rewrite.c
+@@ -63,6 +63,29 @@
+         return NGX_CONF_ERROR;
+     }
+ 
++#if (nginx_version >= 1031003)
++    /*
++     * Since nginx 1.31.3 (security fix for a heap buffer overflow in the
++     * rewrite module), ngx_http_script_complex_value_code() no longer pushes
++     * the evaluated value onto the script engine stack; a trailing
++     * ngx_http_script_complex_value_end_code() must be emitted to do so.
++     * NDK predates this change, so append it here to keep set_* directives
++     * (e.g. set_escape_uri) from reading an uninitialized stack slot.
++     */
++    {
++        ngx_http_script_complex_value_end_code_t  *complex_end;
++
++        complex_end = ngx_http_script_add_code(lcf->codes,
++                              sizeof(ngx_http_script_complex_value_end_code_t),
++                              &complex);
++        if (complex_end == NULL) {
++            return NGX_CONF_ERROR;
++        }
++
++        complex_end->code = ngx_http_script_complex_value_end_code;
++    }
++#endif
++
+     return NGX_CONF_OK;
+ }
+ 

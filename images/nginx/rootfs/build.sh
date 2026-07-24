@@ -433,6 +433,15 @@ for PATCH in `ls /patches`;do
   fi
 done
 
+# apply third-party module patches
+# ngx_devel_kit predates nginx 1.31.3's rewrite script-engine change and must be
+# taught to emit ngx_http_script_complex_value_end_code, otherwise set_* filters
+# (e.g. set-misc's set_escape_uri used by external-auth) crash the worker.
+for PATCH in `ls /patches-modules`;do
+  echo "Module patch: $PATCH"
+  patch -p1 -d "$BUILD_PATH/ngx_devel_kit" < /patches-modules/$PATCH
+done
+
 WITH_FLAGS="--with-debug \
   --with-compat \
   --with-pcre-jit \
