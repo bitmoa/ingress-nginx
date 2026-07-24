@@ -18,7 +18,7 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export NGINX_VERSION=1.31.1
+export NGINX_VERSION=1.31.3
 
 # Check for recent changes: https://github.com/vision5/ngx_devel_kit/compare/v0.3.3...master
 export NDK_VERSION=v0.3.3
@@ -189,7 +189,7 @@ mkdir --verbose -p "$BUILD_PATH"
 cd "$BUILD_PATH"
 
 # download, verify and extract the source files
-get_src 9fcaaeb8f22544b09a19a761f3412c4112215422401634bebdd1296a403cc4bc \
+get_src a7657c50811c2d92d9895395e8b873ef60398142c4db21eb647811c38f6dd525 \
         "https://nginx.org/download/nginx-$NGINX_VERSION.tar.gz"
 
 get_src aa961eafb8317e0eb8da37eb6e2c9ff42267edd18b56947384e719b85188f58b \
@@ -431,6 +431,15 @@ for PATCH in `ls /patches`;do
   else
     patch -p1 < /patches/$PATCH
   fi
+done
+
+# apply third-party module patches
+# ngx_devel_kit predates nginx 1.31.3's rewrite script-engine change and must be
+# taught to emit ngx_http_script_complex_value_end_code, otherwise set_* filters
+# (e.g. set-misc's set_escape_uri used by external-auth) crash the worker.
+for PATCH in `ls /patches-modules`;do
+  echo "Module patch: $PATCH"
+  patch -p1 -d "$BUILD_PATH/ngx_devel_kit" < /patches-modules/$PATCH
 done
 
 WITH_FLAGS="--with-debug \

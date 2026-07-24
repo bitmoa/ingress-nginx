@@ -2,7 +2,7 @@
 
 [ingress-nginx](https://github.com/kubernetes/ingress-nginx) Ingress controller for Kubernetes using NGINX as a reverse proxy and load balancer
 
-![Version: 4.15.6](https://img.shields.io/badge/Version-4.15.6-informational?style=flat-square) ![AppVersion: 1.15.6](https://img.shields.io/badge/AppVersion-1.15.6-informational?style=flat-square)
+![Version: 4.15.1](https://img.shields.io/badge/Version-4.15.1-informational?style=flat-square) ![AppVersion: 1.15.5](https://img.shields.io/badge/AppVersion-1.15.5-informational?style=flat-square)
 
 To use, add `ingressClassName: nginx` spec field or the `kubernetes.io/ingress.class: nginx` annotation to your Ingress resources.
 
@@ -10,7 +10,7 @@ This chart bootstraps an ingress-nginx deployment on a [Kubernetes](http://kuber
 
 ## Requirements
 
-Kubernetes: `>=1.20.15-0`
+Kubernetes: `>=1.21.0-0`
 
 ## Get Repo Info
 
@@ -278,6 +278,7 @@ metadata:
 | controller.admissionWebhooks.patch.image.digest | string | `"sha256:01038e7de14b78d702d2849c3aad72fd25903c4765af63cf16aa3398f5d5f2dd"` |  |
 | controller.admissionWebhooks.patch.image.image | string | `"ingress-nginx/kube-webhook-certgen"` |  |
 | controller.admissionWebhooks.patch.image.pullPolicy | string | `"IfNotPresent"` |  |
+| controller.admissionWebhooks.patch.image.registry | string | `"registry.k8s.io"` |  |
 | controller.admissionWebhooks.patch.image.tag | string | `"v1.6.9"` |  |
 | controller.admissionWebhooks.patch.labels | object | `{}` | Labels to be added to patch job resources |
 | controller.admissionWebhooks.patch.networkPolicy.enabled | bool | `false` | Enable 'networkPolicy' or not |
@@ -349,9 +350,9 @@ metadata:
 | controller.hostname | object | `{}` | Optionally customize the pod hostname. |
 | controller.image.allowPrivilegeEscalation | bool | `false` |  |
 | controller.image.chroot | bool | `false` |  |
-| controller.image.digest | string | `""` |  |
-| controller.image.digestChroot | string | `""` |  |
-| controller.image.image | string | `"bitmoa/bitmoa-ingress-nginx-controller"` |  |
+| controller.image.digest | string | `"sha256:9a89fd2c6c3dbcc9f47b2bdd919e41477bfb9386e88418ea573c0f6d319e4ebb"` |  |
+| controller.image.digestChroot | string | `"sha256:a627d26c4af2a8539879b93890c3b3f04467df65f1f7838534a96f6b0cdcb785"` |  |
+| controller.image.image | string | `"bitmoa/bitmoa-nginx-ingress-controller"` |  |
 | controller.image.pullPolicy | string | `"IfNotPresent"` |  |
 | controller.image.readOnlyRootFilesystem | bool | `false` |  |
 | controller.image.runAsGroup | int | `82` | This value must not be changed using the official image. uid=101(www-data) gid=82(www-data) groups=82(www-data) |
@@ -531,6 +532,7 @@ metadata:
 | defaultBackend.image.image | string | `"defaultbackend-amd64"` |  |
 | defaultBackend.image.pullPolicy | string | `"IfNotPresent"` |  |
 | defaultBackend.image.readOnlyRootFilesystem | bool | `true` |  |
+| defaultBackend.image.registry | string | `"registry.k8s.io"` |  |
 | defaultBackend.image.runAsGroup | int | `65534` |  |
 | defaultBackend.image.runAsNonRoot | bool | `true` |  |
 | defaultBackend.image.runAsUser | int | `65534` |  |
