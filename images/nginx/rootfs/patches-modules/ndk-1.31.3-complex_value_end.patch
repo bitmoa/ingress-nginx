@@ -1,6 +1,6 @@
 --- a/src/ndk_rewrite.c
 +++ b/src/ndk_rewrite.c
-@@ -63,6 +63,29 @@
+@@ -63,6 +63,31 @@
          return NGX_CONF_ERROR;
      }
  
@@ -12,6 +12,8 @@
 +     * ngx_http_script_complex_value_end_code() must be emitted to do so.
 +     * NDK predates this change, so append it here to keep set_* directives
 +     * (e.g. set_escape_uri) from reading an uninitialized stack slot.
++     * nginx 1.31.4 restored the push for compatibility; the end code then
++     * only finalizes the value length, so it remains correct to emit it.
 +     */
 +    {
 +        ngx_http_script_complex_value_end_code_t  *complex_end;
