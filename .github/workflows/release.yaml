@@ -293,6 +293,10 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha
+          # only release tags move "latest"; pre-release tags (e.g. v1.15.8-rc.1)
+          # and branch runs (workflow_dispatch) must not
+          flavor: |
+            latest=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
 
       - name: Docker metadata
         id: meta_chroot
@@ -303,6 +307,10 @@ jobs:
             type=ref,event=branch
             type=ref,event=tag
             type=sha
+          # only release tags move "latest"; pre-release tags (e.g. v1.15.8-rc.1)
+          # and branch runs (workflow_dispatch) must not
+          flavor: |
+            latest=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref_name, '-') }}
 
       - name: Create manifest list and push tags
         working-directory: /tmp/digests
